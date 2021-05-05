@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"math"
 	"mime/quotedprintable"
 	"net/url"
 	"os"
@@ -21,6 +22,8 @@ import (
 
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/unicode/runenames"
+
+	"github.com/x448/float16"
 )
 
 type modeFunc = func([]byte) ([]byte, error)
@@ -41,6 +44,8 @@ var modes = map[string]struct{ decoder, encoder modeFunc }{
 	"rot13":            {rot13, rot13},
 	"url-path":         {urlPathDec, urlPathEnc},
 	"url-query":        {urlQueryDec, urlQueryEnc},
+	"float32-hex":      {float32hexDec, float32hexEnc},
+	"float16-hex":      {float16hexDec, float16hexEnc},
 }
 
 func main() {
@@ -151,6 +156,64 @@ func hexDec(src []byte) ([]byte, error) {
 	dst := make([]byte, hex.DecodedLen(len(src)))
 	n, err := hex.Decode(dst, src)
 	return dst[:n], err
+}
+
+func float32hexDec(src []byte) ([]byte, error) {
+	words := strings.Fields(string(src))
+	var dst strings.Builder
+	for _, word := range words {
+		s, err := strconv.ParseUint(word, 16, 32)
+		if err != nil {
+			return nil, err
+		}
+		f := math.Float32frombits(uint32(s))
+		fmt.Fprintf(&dst, "%g ", f)
+	}
+	return []byte(dst.String()), nil
+}
+
+func float32hexEnc(src []byte) ([]byte, error) {
+	words := strings.Fields(string(src))
+	var dst strings.Builder
+	for _, word := range words {
+		s, err := strconv.ParseFloat(word, 32)
+		if err != nil {
+			return nil, err
+		}
+		x := math.Float32bits(float32(s))
+		fmt.Fprintf(&dst, "%.8X ", x)
+	}
+	return []byte(dst.String()), nil
+}
+
+func float16hexDec(src []byte) ([]byte, error) {
+	words := strings.Fields(string(src))
+	var dst strings.Builder
+	for _, word := range words {
+		s, err := strconv.ParseUint(word, 16, 16)
+		if err != nil {
+			return nil, err
+		}
+		f := float16.Frombits(uint16(s))
+		fmt.Fprintf(&dst, "%g ", f.Float32())
+	}
+	return []byte(dst.String()), nil
+}
+
+func float16hexEnc(src []byte) ([]byte, error) {
+	words := strings.Fields(string(src))
+	var dst strings.Builder
+	for _, word := range words {
+		f_64, err := strconv.ParseFloat(word, 32)
+		if err != nil {
+			return nil, err
+		}
+		f_32 := float32(f_64)
+		f_16 := float16.Fromfloat32(f_32)
+		x := f_16.Bits()
+		fmt.Fprintf(&dst, "%.4X ", x)
+	}
+	return []byte(dst.String()), nil
 }
 
 func hexExtEnc(src []byte) (dst []byte, err error) {
